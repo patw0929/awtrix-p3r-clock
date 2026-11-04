@@ -93,7 +93,7 @@ This app supports playing Makoto Yuki's iconic summon voice line ("Persona!") al
 - **Uploading the 8-bit Voice File Manually**:
   1. Open your AWTRIX NG Web UI (`http://<your-device-ip>`).
   2. Navigate to the **Audio** tab, or click the **🎵 musical note icon** in the **Scripts** editor bar.
-  3. Upload [`assets/persona.mp3`](assets/persona.mp3) to enable the complete 8-bit voice line.
+  3. Upload [`assets/persona.mp3`](assets/persona.mp3) (pre-formatted to AWTRIX-compliant MPEG-1 Layer III at 44.1 kHz) to enable the complete 8-bit voice line.
 
 ---
 

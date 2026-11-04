@@ -93,7 +93,7 @@
 - **수동으로 8-bit 음성 등록하기**:
   1. AWTRIX NG 웹 관리자(`http://<기기IP>`)를 엽니다.
   2. **Audio** 탭으로 이동하거나, **Scripts** 탭 편집기 상단의 **🎵 음표 아이콘**을 클릭합니다.
-  3. 저장소의 [`assets/persona.mp3`](assets/persona.mp3) 파일을 업로드하면 정식 8-bit 보이스가 활성화됩니다.
+  3. 저장소의 [`assets/persona.mp3`](assets/persona.mp3) 파일(AWTRIX 펌웨어 규격인 MPEG-1 Layer III 44.1 kHz로 최적화됨)을 업로드하면 정식 8-bit 보이스가 활성화됩니다.
 
 ---
 

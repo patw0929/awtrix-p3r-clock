@@ -93,7 +93,7 @@
 - **手動で 8-bit ボイスを登録する方法**：
   1. AWTRIX NG の Web 管理画面（`http://<デバイスIP>`）を開きます。
   2. **Audio** タブに移動するか、**Scripts** タブのエディタツールバーにある **🎵 音符アイコン**をクリックします。
-  3. 本プロジェクトの [`assets/persona.mp3`](assets/persona.mp3) をアップロードすれば、本来の 8-bit ボイスが有効になります。
+  3. 本プロジェクトの [`assets/persona.mp3`](assets/persona.mp3)（AWTRIX 規格に準拠した MPEG-1 Layer III 44.1 kHz 最適化済み）をアップロードすれば、本来の 8-bit ボイスが有効になります。
 
 ---
 

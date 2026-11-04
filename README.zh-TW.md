@@ -93,7 +93,7 @@
 - **手動上傳 8-bit 語音音檔**：
   1. 開啟 AWTRIX NG 網頁後台（`http://<裝置IP>`）。
   2. 前往 **Audio**（音效）標籤頁，或在 **Scripts** 頁面點擊編輯列上的 **🎵 音符圖示**。
-  3. 將專案中的 [`assets/persona.mp3`](assets/persona.mp3) 上傳至時鐘即可啟用完整語音。
+  3. 將專案中的 [`assets/persona.mp3`](assets/persona.mp3)（已最佳化為 AWTRIX 韌體標準的 MPEG-1 Layer III 44.1 kHz 規格）上傳至時鐘即可啟用完整語音。
 
 ---
 
