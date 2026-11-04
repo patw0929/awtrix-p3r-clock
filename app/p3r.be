@@ -1,11 +1,14 @@
 # @name    Persona 3 Reload Clock
-# @desc    Iconic P3R Underwater Clock & Calendar for Ulanzi TC002
+# @desc    Iconic P3R Underwater Clock & Calendar with Evoker Summon for Ulanzi TC002
 # @author  patw
-# @version 1.0.0
+# @version 1.1.0
 # @display 52x16
+# @needs   audio.mp3, audio.song, audio.rtttl
 # @config  timezone        text   "Timezone"             default="Asia/Taipei" help="IANA timezone or offset, e.g. Asia/Taipei, Asia/Tokyo, UTC, +8, auto"
 # @config  force_dark      bool   "Force Dark Hour"      default=false help="Force Tartarus Dark Hour green theme (normally 00:00 - 00:59)"
 # @config  enable_p3_cycle bool   "Cycle P3 Logo"        default=true help="Alternate weekday slot with classic pixel P3 logo"
+# @config  trigger_btn     text   "Summon Button"        default="select" help="Button to trigger Evoker summon: select, middle, left, right, any"
+# @config  enable_sound    bool   "Enable Sound"         default=true help="Play MP3 voice line or buzzer sound effects when summoning"
 
 # ==============================================================================
 # Persona 3 Reload Theme Calendar & Clock for AWTRIX NG (awtrix-p3r-clock)
@@ -13,17 +16,25 @@
 #
 # Features:
 #   - Normal Mode:
-#     * Left (Cols 0-15): Makoto Yuki underwater icon
+#     * Left (Cols 0-15): Makoto Yuki underwater plunge icon
 #     * Right (Cols 16-51): Ocean blue gradient, ambient rising bubbles
 #     * Top-Right: Date (MM/DD) & Yellow Weekday (WED) / P3 logo
 #     * Bottom-Right: 4x7 Clock (HH:MM:SS)
 #   - Dark Hour Mode (00:00~00:59 or force_dark):
 #     * Left (Cols 0-15): Dark Hour Full Moon icon
 #     * Right: Dark green gradient, neon green clock, red seconds
+#   - Interactive Evoker Persona Summon (Press Middle/Select button):
+#     * Phase 1: Iconic cinematic full-screen P3R Eye Cut-in with Makoto aiming Evoker to head & "!!"
+#     * Phase 2: Blinding gunshot muzzle flash burst & recoil
+#     * Phase 3: Radial glass shatter explosion, blue flames, and glowing "PERSONA" typography
+#     * Phase 4: Dissipating blue embers smoothly fading back to clock
+#     * Audio: Native sound.play with local MP3 playback, raw GitHub stream fallback, and buzzer RTTTL
 #   - Settings (Web UI App Settings):
 #     * Timezone string (Asia/Taipei, Asia/Tokyo, UTC, +8, auto)
 #     * Force Dark Hour toggle
 #     * P3 Logo cycle toggle (alternates Weekday with P3 logo)
+#     * Summon Button mapping (select, middle, left, right, any)
+#     * Enable Sound toggle
 # ==============================================================================
 
 # Safe global imports
@@ -39,6 +50,8 @@ class P3R_Clock
     var timezone          # Timezone string, e.g. "Asia/Taipei", "Asia/Tokyo", "+8", "auto"
     var force_dark        # true = Force Dark Hour; false = auto (00:00~00:59)
     var enable_p3_cycle   # true = Alternate weekday with P3 logo; false = weekday only
+    var trigger_btn       # Physical button to trigger summon: "select", "middle", "left", "right", "any"
+    var enable_sound      # true = Play voice line / sound effects; false = silent
 
     # Internal state
     var frame_count       # Frame counter for animations
@@ -46,7 +59,11 @@ class P3R_Clock
     var spans_moon        # 16x16 Dark Hour Full Moon Spans
     var digits_4x7        # 4x7 clock numbers font
     var font_3x5          # 3x5 font for date, weekday, and text
+    var font_persona      # 4x7 bold font for PERSONA summon banner
     var bubbles           # Floating water bubbles & ambient particles
+    var shards            # Dynamic glass shatter particles
+    var is_summoning      # true while summon animation is playing
+    var summon_frame      # Frame counter for summon animation
     var has_pixel         # True if firmware supports pixel()
     var has_line          # True if firmware supports line()
     var pseudo_seed       # Pseudo-random generator state
@@ -71,6 +88,16 @@ class P3R_Clock
             if ep != nil self.enable_p3_cycle = ep end
         except ..
         end
+        try
+            var tb = store.get("trigger_btn")
+            if tb != nil self.trigger_btn = tb end
+        except ..
+        end
+        try
+            var es = store.get("enable_sound")
+            if es != nil self.enable_sound = es end
+        except ..
+        end
 
         if self.timezone == nil
             self.timezone = "Asia/Taipei"
@@ -81,9 +108,17 @@ class P3R_Clock
         if self.enable_p3_cycle == nil
             self.enable_p3_cycle = true
         end
+        if self.trigger_btn == nil
+            self.trigger_btn = "select"
+        end
+        if self.enable_sound == nil
+            self.enable_sound = true
+        end
 
         self.frame_count = 0
         self.pseudo_seed = 12345
+        self.is_summoning = false
+        self.summon_frame = 0
 
         self.has_pixel = true
         self.has_line = false
@@ -91,9 +126,10 @@ class P3R_Clock
             import global
             if global.contains("pixel") self.has_pixel = true end
             if global.contains("line") self.has_line = true end
+            line(0, 0, 0, 0, 0)
+            self.has_line = true
         except ..
         end
-
         # 1. Makoto Yuki inverted plunge RLE Spans [x, y, w, color]
         self.spans_makoto = [
             [0, 0, 3, 0xFFFFFF], [3, 0, 1, 0x0A0D18], [4, 0, 2, 0xFFFFFF], [6, 0, 2, 0xEAF2FA], [8, 0, 2, 0xFFEAD8], [10, 0, 1, 0xD4B098], [11, 0, 1, 0x8BE9FD], [12, 0, 1, 0x00E5FF], [13, 0, 3, 0x0033A0],
@@ -114,7 +150,7 @@ class P3R_Clock
             [0, 15, 5, 0x001450], [5, 15, 1, 0x030C28], [6, 15, 1, 0x08206A], [7, 15, 9, 0x001450]
         ]
 
-        # 2. Dark Hour Full Moon RLE Spans (Green atmosphere with lunar craters)
+        # 2. Dark Hour Full Moon RLE Spans
         self.spans_moon = [
             [0, 0, 6, 0x0A2B18], [6, 0, 4, 0x1B5E28], [10, 0, 6, 0x0A2B18],
             [0, 1, 4, 0x0A2B18], [4, 1, 2, 0x1B5E28], [6, 1, 4, 0x55DE44], [10, 1, 2, 0x1B5E28], [12, 1, 4, 0x0A2B18],
@@ -133,7 +169,6 @@ class P3R_Clock
             [0, 14, 4, 0x0A2B18], [4, 14, 2, 0x1B5E28], [6, 14, 4, 0x55DE44], [10, 14, 2, 0x1B5E28], [12, 14, 4, 0x0A2B18],
             [0, 15, 6, 0x0A2B18], [6, 15, 4, 0x1B5E28], [10, 15, 6, 0x0A2B18]
         ]
-
         # 3. 4x7 Bold Digit Bitmaps
         self.digits_4x7 = {
             0: [0x6, 0x9, 0x9, 0x9, 0x9, 0x9, 0x6],
@@ -170,7 +205,7 @@ class P3R_Clock
             "O": [0x7, 0x5, 0x5, 0x5, 0x7],
             "T": [0x7, 0x2, 0x2, 0x2, 0x2],
             "E": [0x7, 0x4, 0x6, 0x4, 0x7],
-            "W": [0x5, 0x5, 0x5, 0x5, 0x2],
+            "W": [0x5, 0x5, 0x5, 0x7, 0x5],
             "D": [0x6, 0x5, 0x5, 0x5, 0x6],
             "H": [0x5, 0x5, 0x7, 0x5, 0x5],
             "F": [0x7, 0x4, 0x6, 0x4, 0x4],
@@ -179,7 +214,18 @@ class P3R_Clock
             "A": [0x2, 0x5, 0x7, 0x5, 0x5]
         }
 
-        # 5. Rising water bubbles and subtle pink particle shards
+        # 5. 4x7 Bold Font for PERSONA Summon
+        self.font_persona = {
+            "P": [0xF, 0x9, 0xF, 0x8, 0x8, 0x8, 0x8],
+            "E": [0xF, 0x8, 0xE, 0x8, 0x8, 0x8, 0xF],
+            "R": [0xF, 0x9, 0xF, 0xC, 0xA, 0x9, 0x9],
+            "S": [0x7, 0x8, 0xE, 0x1, 0x1, 0x9, 0x6],
+            "O": [0x6, 0x9, 0x9, 0x9, 0x9, 0x9, 0x6],
+            "N": [0x9, 0x9, 0xD, 0xB, 0x9, 0x9, 0x9],
+            "A": [0x6, 0x9, 0x9, 0xF, 0x9, 0x9, 0x9]
+        }
+
+        # 6. Rising water bubbles and subtle pink particle shards
         self.bubbles = [
             {"x": 19, "y": 14.0, "speed": 0.20, "color": 0x6CEFFF},
             {"x": 25, "y": 12.0, "speed": 0.25, "color": 0x4AE5FF},
@@ -187,11 +233,130 @@ class P3R_Clock
             {"x": 41, "y": 10.0, "speed": 0.22, "color": 0x9EEFFF},
             {"x": 48, "y": 13.0, "speed": 0.30, "color": 0xFF85C2}
         ]
+
+        # 7. Radial glass shatter particle state
+        self.init_shards()
+    end
+    def init_shards()
+        self.shards = [
+            {"x": 23.0, "y": 3.0, "vx": 2.2, "vy": -1.2, "c": 0xFFFFFF, "len": 2},
+            {"x": 23.0, "y": 3.0, "vx": -2.5, "vy": -1.0, "c": 0x00E5FF, "len": 2},
+            {"x": 23.0, "y": 3.0, "vx": 3.4, "vy": -0.4, "c": 0x8BE9FD, "len": 1},
+            {"x": 23.0, "y": 3.0, "vx": -3.2, "vy": -0.5, "c": 0xFFFFFF, "len": 2},
+            {"x": 23.0, "y": 3.0, "vx": 1.8, "vy": 1.2,  "c": 0x00AEEF, "len": 2},
+            {"x": 23.0, "y": 3.0, "vx": -1.9, "vy": 1.1,  "c": 0x6CEFFF, "len": 1},
+            {"x": 23.0, "y": 3.0, "vx": 3.8, "vy": 0.8,  "c": 0xFFFFFF, "len": 3},
+            {"x": 23.0, "y": 3.0, "vx": -3.6, "vy": 0.7,  "c": 0x8BE9FD, "len": 2},
+            {"x": 23.0, "y": 3.0, "vx": 2.7, "vy": -1.8, "c": 0x00E5FF, "len": 2},
+            {"x": 23.0, "y": 3.0, "vx": -2.8, "vy": -1.7, "c": 0xFFFFFF, "len": 1},
+            {"x": 23.0, "y": 3.0, "vx": 4.2, "vy": -0.2, "c": 0x00AEEF, "len": 1},
+            {"x": 23.0, "y": 3.0, "vx": -4.0, "vy": -0.3, "c": 0x8BE9FD, "len": 2},
+            {"x": 23.0, "y": 3.0, "vx": 1.5, "vy": -2.2, "c": 0xFFFFFF, "len": 2},
+            {"x": 23.0, "y": 3.0, "vx": -1.4, "vy": -2.0, "c": 0x6CEFFF, "len": 1},
+            {"x": 23.0, "y": 3.0, "vx": 3.1, "vy": 1.5,  "c": 0x00E5FF, "len": 2},
+            {"x": 23.0, "y": 3.0, "vx": -3.0, "vy": 1.4,  "c": 0xFFFFFF, "len": 1}
+        ]
     end
 
     def rand_next(max_val)
         self.pseudo_seed = (self.pseudo_seed * 1103515245 + 12345) & 0x7FFFFFFF
         return self.pseudo_seed % max_val
+    end
+
+    # Button Event Handlers for AWTRIX NG
+    def on_button(btn)
+        log("P3R: on_button event: " + str(btn))
+        var target = self.trigger_btn
+        if target == nil target = "select" end
+
+        var match = false
+        if target == "any"
+            match = true
+        elif target == "select" || target == "middle"
+            if btn == "select" || btn == "middle"
+                match = true
+            end
+        elif btn == target
+            match = true
+        end
+
+        if match
+            self.trigger_summon()
+            return true
+        end
+        return false
+    end
+
+    def on_button_event(btn, evt)
+        if evt == "press" || evt == "click" || evt == nil
+            return self.on_button(btn)
+        end
+        return false
+    end
+
+    def trigger_summon()
+        log("P3R: trigger_summon called!")
+        self.is_summoning = true
+        self.summon_frame = 0
+        self.init_shards()
+        if self.enable_sound != false && self.enable_sound != "false" && self.enable_sound != 0
+            self.play_summon_audio()
+        end
+    end
+
+    # Play summon audio: Direct local playback (MP3 -> Hardware Synthesizer -> RTTTL)
+    def play_summon_audio()
+        # 1. Ensure App Volume is audible (syncs with Alert Volume if appVolume was muted or 0)
+        try
+            var av = settings.get("appVolume")
+            var al = settings.get("alertVolume")
+            if al == nil al = 80 end
+            if av != nil && av < 20
+                settings.set("appVolume", al)
+            end
+        except ..
+        end
+
+        # 2. Native AWTRIX NG sound dispatch (TC002 & all AWTRIX NG devices):
+        #    - First priority: local dedicated MP3 effect ("persona")
+        #    - If MP3 file is not found (sound.playing() is false), fall back to:
+        #    - Second priority: TC002 Hardware Synthesizer Song (Gunshot noise + "Per-so-na!" harmony, ZERO files needed!)
+        #    - Third priority: RTTTL melody buzzer
+        var played = false
+        try
+            sound.effect("persona")
+            if sound.playing()
+                played = true
+                log("P3R: playing persona MP3 effect")
+            end
+        except .. as e
+            log("P3R: sound.effect exception: " + str(e))
+        end
+
+        if !played
+            try
+                sound.effect({
+                    "song": "bpm 180\ninst shot wave=noise attack=2 decay=250 sustain=0 volume=120\ninst vocal wave=saw unison=15 attack=5 decay=180 sustain=20 volume=100\nshot: c4:2 r:2\nvocal: c5:2 d4:2 g4:4 g#4:4"
+                })
+                if sound.playing()
+                    played = true
+                    log("P3R: playing hardware synthesizer song (no MP3 needed)")
+                end
+            except .. as e
+                log("P3R: song exception: " + str(e))
+            end
+        end
+
+        if !played
+            try
+                sound.play({
+                    "rtttl": "Persona:d=8,o=4,b=180:16c5,8d4,4g4,8g#4,16p,16c6,32b5,32g5,32e5,16c5"
+                })
+                log("P3R: playing rtttl fallback")
+            except .. as e
+                log("P3R: rtttl exception: " + str(e))
+            end
+        end
     end
 
     # Parse timezone string and compute second offset
@@ -223,7 +388,6 @@ class P3R_Clock
             end
         end
 
-        # Support numeric offset strings like "+8", "8", "-5", "0"
         try
             var num = int(tz)
             return num * 3600
@@ -274,11 +438,9 @@ class P3R_Clock
         }
     end
 
-    # Retrieve current time (prioritize native AWTRIX NG time functions)
     def get_now()
         var offset_sec = self.get_tz_offset()
 
-        # 1. Native AWTRIX NG global time functions
         try
             import global
             if global.contains("hour") && global.contains("minute") && global.contains("second")
@@ -302,7 +464,6 @@ class P3R_Clock
         except ..
         end
 
-        # 2. Native epoch_ms()
         try
             import global
             if global.contains("epoch_ms")
@@ -312,7 +473,6 @@ class P3R_Clock
         except ..
         end
 
-        # 3. Fallback: time module
         if time_mod != nil
             try
                 var ep = time_mod.time() + offset_sec
@@ -321,11 +481,9 @@ class P3R_Clock
             end
         end
 
-        # 4. Default fallback
         return {"year": 2026, "month": 11, "day": 3, "hour": 21, "min": 45, "sec": 0, "weekday": 2}
     end
 
-    # Draw 4x7 bold number for clock
     def draw_digit_4x7(x, y, num, color)
         if !self.digits_4x7.contains(num) return end
         var rows = self.digits_4x7[num]
@@ -343,7 +501,6 @@ class P3R_Clock
         end
     end
 
-    # Draw single 3x5 character using pixel()
     def draw_char_3x5(x, y, ch, color)
         if !self.font_3x5.contains(ch) return 0 end
         var rows = self.font_3x5[ch]
@@ -362,7 +519,6 @@ class P3R_Clock
         return 4
     end
 
-    # Draw 3x5 string
     def draw_text_3x5(x, y, str_val, color)
         var cur_x = x
         var i = 0
@@ -374,9 +530,33 @@ class P3R_Clock
         end
     end
 
-    # Draw classic Persona 3 Reload pixel logo (P3)
+    def draw_persona_char(x, y, ch, color)
+        if !self.font_persona.contains(ch) return end
+        var rows = self.font_persona[ch]
+        var ry = 0
+        while ry < 7
+            var bits = rows[ry]
+            var rx = 0
+            while rx < 4
+                if (bits & (8 >> rx)) != 0
+                    pixel(x + rx, y + ry, color)
+                end
+                rx = rx + 1
+            end
+            ry = ry + 1
+        end
+    end
+
+    def draw_persona_word(start_x, y, color)
+        var word = ["P", "E", "R", "S", "O", "N", "A"]
+        var i = 0
+        while i < 7
+            self.draw_persona_char(start_x + i * 5, y, word[i], color)
+            i = i + 1
+        end
+    end
+
     def draw_p3_logo(x, y, color)
-        # P (5x5, located at x..x+4)
         pixel(x + 1, y, color)
         pixel(x + 2, y, color)
         pixel(x + 3, y, color)
@@ -394,7 +574,6 @@ class P3R_Clock
         pixel(x, y + 3, color)
         pixel(x, y + 4, color)
 
-        # 3 (5x5, located at x+6..x+10)
         pixel(x + 6, y, color)
         pixel(x + 7, y, color)
         pixel(x + 8, y, color)
@@ -447,10 +626,353 @@ class P3R_Clock
 
     def loop()
     end
+    # Evoker Persona Summon Animation Cutscene
+    def draw_summon()
+        self.summon_frame = self.summon_frame + 1
+        var f = self.summon_frame
+
+        if f >= 90
+            self.is_summoning = false
+            self.summon_frame = 0
+            return
+        end
+
+        # -------------------------------------------------------------
+        # Phase 1: Giant Right Eye + Left Sweeping Bangs + Makoto Evoker Aim (Frames 1 ~ 25)
+        # -------------------------------------------------------------
+        if f < 26
+            # 1. Base cut-in background (Deep ocean navy with framing borders)
+            rect_fill(0, 0, 52, 16, 0x000E2B)
+            rect_fill(0, 0, 52, 2, 0x000612)
+            rect_fill(0, 14, 52, 2, 0x000612)
+
+            # 2. Skin tone bands
+            # Right illuminated face (Cols 28..48, Rows 3..12)
+            rect_fill(28, 3, 20, 10, 0xF2E6DC)
+            self.draw_line(28, 3, 47, 3, 0xD4BCA8)
+            self.draw_line(28, 12, 47, 12, 0xD4BCA8)
+
+            # Left shaded face under hair (Cols 5..25, Rows 3..12)
+            rect_fill(5, 3, 20, 10, 0xBAA898)
+            self.draw_line(5, 3, 24, 3, 0x988676)
+            self.draw_line(5, 12, 24, 12, 0x988676)
+
+            # 3. Left Eye (veiled under shadow and bangs, Cols 8..20)
+            # Eyebrow
+            self.draw_line(8, 3, 10, 3, 0x00102A)
+            self.draw_line(11, 2, 17, 2, 0x00102A)
+            self.draw_line(18, 3, 20, 3, 0x00102A)
+
+            # Upper lash line
+            self.draw_line(7, 5, 8, 5, 0x00050F)
+            self.draw_line(9, 4, 19, 4, 0x00050F)
+            self.draw_line(20, 5, 21, 5, 0x00050F)
+
+            # Sclera (White in cool shadow)
+            rect_fill(8, 5, 13, 4, 0xC4D4E2)
+            self.draw_line(8, 5, 20, 5, 0x8AA0B4)
+
+            # Lower eyelid contour
+            self.draw_line(8, 9, 9, 9, 0x00050F)
+            self.draw_line(10, 10, 18, 10, 0x00050F)
+            self.draw_line(19, 9, 20, 9, 0x00050F)
+
+            # Cyan Glowing Iris & Pupil (faintly glowing from behind bangs!)
+            var left_iris_glow = 0x00A8DC
+            if (f % 4) >= 2 left_iris_glow = 0x00C8EE end
+            rect_fill(11, 5, 7, 4, 0x00449E)
+            rect_fill(12, 6, 5, 3, left_iris_glow)
+            rect_fill(14, 6, 2, 2, 0x000512)
+            pixel(13, 6, 0x7CE6FF)
+
+            # 4. Bangs sweeping diagonally to the left (Cols 0..24, 斜向左方)
+            # Left temple base block (Cols 0..3)
+            rect_fill(0, 0, 4, 16, 0x000A1C)
+            self.draw_line(0, 2, 3, 16, 0x00245E)
+
+            # Forehead roots (Cols 4..24, Rows 0..1)
+            rect_fill(4, 0, 21, 2, 0x000A1C)
+            self.draw_line(4, 1, 24, 1, 0x00245E)
+
+            # Lock 1: Far left temple diagonal sweep (DX=-8, DY=+11)
+            self.draw_line(6, 0, 0, 8, 0x000A1C)
+            self.draw_line(7, 0, 0, 10, 0x00245E)
+            self.draw_line(8, 0, 1, 12, 0x004A9E)
+
+            # Lock 2: Sweeping blade across cheek (DX=-12, DY=+14, 45度斜向左方)
+            self.draw_line(14, 0, 2, 13, 0x000A1C)
+            self.draw_line(15, 0, 3, 14, 0x00245E)
+            self.draw_line(16, 0, 4, 15, 0x004A9E)
+            self.draw_line(15, 1, 5, 12, 0x0099DD) # Highlight along the slanted blade
+
+            # Lock 3: Sweeping blade across inner eye / nose bridge (DX=-12, DY=+14)
+            self.draw_line(22, 0, 10, 13, 0x000A1C)
+            self.draw_line(23, 0, 11, 14, 0x00245E)
+            self.draw_line(24, 0, 12, 15, 0x004A9E)
+            self.draw_line(23, 1, 12, 12, 0x00D0FF) # Sharp Persona highlight
+
+            # Diagonal wispy strand dipping towards eyelid
+            self.draw_line(19, 1, 15, 5, 0x00245E)
+            pixel(15, 5, 0x0099DD)
+
+            # 5. Right Giant Eye (Cols 31..45, Rows 4..10)
+            # Eyebrow (determined anime arch)
+            self.draw_line(32, 3, 34, 3, 0x00102A)
+            self.draw_line(35, 2, 41, 2, 0x00102A)
+            self.draw_line(42, 3, 44, 3, 0x00102A)
+
+            # Upper lash line (thick sharp black anime lid)
+            self.draw_line(31, 5, 32, 5, 0x00050F)
+            self.draw_line(33, 4, 43, 4, 0x00050F)
+            self.draw_line(44, 5, 45, 5, 0x00050F)
+
+            # Sclera (White of eye)
+            rect_fill(32, 5, 13, 4, 0xFFFFFF)
+            self.draw_line(32, 5, 44, 5, 0xBDD7EE)
+
+            # Lower eyelid contour
+            self.draw_line(32, 9, 33, 9, 0x00050F)
+            self.draw_line(34, 10, 42, 10, 0x00050F)
+            self.draw_line(43, 9, 44, 9, 0x00050F)
+
+            # Glowing Cyan Iris (Cols 35..41, Rows 5..8)
+            var iris_glow = 0x00E5FF
+            if (f % 4) >= 2 iris_glow = 0x3BEFFF end
+            rect_fill(35, 5, 7, 4, 0x0055CC)
+            rect_fill(36, 6, 5, 3, iris_glow)
+
+            # Pupil (Cols 37..38, Rows 6..7)
+            rect_fill(37, 6, 2, 2, 0x000512)
+
+            # Specular High Glint
+            pixel(36, 5, 0xFFFFFF)
+            pixel(36, 6, 0xFFFFFF)
+
+            # Dynamic horizontal eye flare
+            if (f % 8) < 4
+                self.draw_line(32, 6, 35, 6, 0xFFFFFF)
+                self.draw_line(42, 6, 44, 6, 0xFFFFFF)
+            end
+
+            # Right temple hair (Cols 47..51)
+            rect_fill(47, 0, 5, 16, 0x000A1C)
+            self.draw_line(47, 0, 51, 8, 0x00245E)
+            self.draw_line(48, 0, 51, 5, 0x004A9E)
+
+            # 6. Center Foreground: Makoto Yuki aiming Evoker to Head (Cols 20..29)
+            # Head & Blue Hair (Rows 2..4)
+            pixel(23, 2, 0x0C1838) # Dark hair shadow
+            pixel(24, 2, 0x286AE8) # Electric Persona blue hair
+            pixel(25, 2, 0x286AE8)
+            pixel(26, 2, 0x0C1838)
+
+            # Evoker Gun pressed to temple (Row 3)
+            pixel(21, 3, 0xF0F5FC) # Evoker silver slide
+            pixel(22, 3, 0xF0F5FC) # Silver barrel
+            pixel(23, 3, 0xFF2233) # Red Evoker power cylinder / trigger
+            pixel(24, 3, 0x286AE8) # Bangs covering forehead
+            pixel(25, 3, 0xFFE2CC) # Face skin tone
+            pixel(26, 3, 0x00E5FF) # Glowing cyan eye
+
+            # Hand gripping Evoker, face, cheek (Row 4)
+            pixel(21, 4, 0x3E5278) # Sleeve cuff / rim highlight
+            pixel(22, 4, 0xFFE2CC) # Right hand gripping gun handle
+            pixel(23, 4, 0x6E7E94) # Gunmetal grip
+            pixel(24, 4, 0x286AE8) # Sweeping bangs
+            pixel(25, 4, 0xFFE2CC) # Cheek / jaw
+            pixel(26, 4, 0xDDAA8A) # Neck shadow
+
+            # Raised Right Arm (Elbow bent left), Collar, Left Shoulder & RED ARMBAND (Row 5)
+            pixel(20, 5, 0x3E5278) # Sharp bent elbow pointing left!
+            pixel(21, 5, 0x141826) # Forearm sleeve
+            pixel(22, 5, 0x141826) # Upper arm
+            pixel(23, 5, 0x141826) # Right shoulder
+            pixel(24, 5, 0xFFFFFF) # High-collar white shirt
+            pixel(25, 5, 0xFFFFFF) # Collar
+            pixel(26, 5, 0x141826) # Left lapel
+            pixel(27, 5, 0xFF1832) # SEES RED ARMBAND on left arm!
+            pixel(28, 5, 0xFFFFFF) # White SEES badge emblem
+
+            # Chest with Blue Holster Strap, Open School Jacket, Red Armband (Row 6)
+            pixel(21, 6, 0x3E5278) # Upper arm rim (creates negative space below elbow at 22)
+            pixel(23, 6, 0x141826) # Jacket right side
+            pixel(24, 6, 0xFFFFFF) # White shirt
+            pixel(25, 6, 0x0066FF) # Blue diagonal SEES holster strap!
+            pixel(26, 6, 0x141826) # Jacket left side
+            pixel(27, 6, 0xFF1832) # Red armband lower section
+            pixel(28, 6, 0x141826) # Left bicep sleeve
+
+            # Mid Torso, Blue Strap continuing across shirt, Hanging Left Sleeve (Row 7)
+            pixel(23, 7, 0x141826) # Open jacket
+            pixel(24, 7, 0x0066FF) # Blue strap running diagonally
+            pixel(25, 7, 0xFFFFFF) # White shirt
+            pixel(26, 7, 0x141826) # Open jacket
+            pixel(28, 7, 0x141826) # Left forearm hanging down
+
+            # Waist: Holster Belt & Left Black Glove (Row 8)
+            pixel(23, 8, 0x141826) # Jacket tail
+            pixel(24, 8, 0xD8E2EC) # White/silver holster strap
+            pixel(25, 8, 0xD8E2EC) # Belt buckle
+            pixel(26, 8, 0xD8E2EC) # Holster pouch
+            pixel(27, 8, 0xD8E2EC) # Holster
+            pixel(28, 8, 0x1A1C24) # Left hand: Black glove!
+
+            # Hips / Pelvis (Row 9)
+            pixel(23, 9, 0x121522)
+            pixel(24, 9, 0x2E3A52)
+            pixel(25, 9, 0x121522)
+            pixel(26, 9, 0x2E3A52)
+            pixel(27, 9, 0x121522)
+
+            # Legs in Iconic A-Stance (Rows 10..14)
+            # Thighs with central gap at col 25
+            pixel(23, 10, 0x121522)
+            pixel(24, 10, 0x2E3A52)
+            pixel(26, 10, 0x2E3A52)
+            pixel(27, 10, 0x121522)
+
+            # Knees
+            pixel(23, 11, 0x121522)
+            pixel(24, 11, 0x2E3A52)
+            pixel(26, 11, 0x2E3A52)
+            pixel(27, 11, 0x121522)
+
+            # Shins angling outward
+            pixel(22, 12, 0x121522)
+            pixel(23, 12, 0x2E3A52)
+            pixel(27, 12, 0x2E3A52)
+            pixel(28, 12, 0x121522)
+
+            # Boots & Ankles
+            pixel(22, 13, 0x0A0D16)
+            pixel(23, 13, 0x303B52)
+            pixel(27, 13, 0x303B52)
+            pixel(28, 13, 0x0A0D16)
+
+            # Feet planted firmly in A-stance
+            pixel(21, 14, 0x303B52)
+            pixel(22, 14, 0x0A0D16)
+            pixel(23, 14, 0x0A0D16)
+            pixel(27, 14, 0x0A0D16)
+            pixel(28, 14, 0x0A0D16)
+            pixel(29, 14, 0x303B52)
+
+            # Water splash & crack at feet
+            pixel(22, 13, 0x00E5FF)
+            pixel(28, 13, 0x00E5FF)
+            pixel(21, 14, 0x8BE9FD)
+            pixel(23, 14, 0xFFFFFF)
+            pixel(27, 14, 0xFFFFFF)
+            pixel(29, 14, 0x8BE9FD)
+            pixel(20, 15, 0x00E5FF)
+            pixel(22, 15, 0x8BE9FD)
+            pixel(24, 15, 0xFFFFFF)
+            pixel(26, 15, 0xFFFFFF)
+            pixel(28, 15, 0x8BE9FD)
+            pixel(29, 15, 0x00E5FF)
+
+            # Ambient rising bubbles
+            pixel(2, (2 - f / 5) % 16, 0x8BE9FD)
+            pixel(16, (5 - f / 3) % 16, 0x8BE9FD)
+            pixel(30, (2 - f / 4) % 16, 0x8BE9FD)
+            pixel(46, (4 - f / 3) % 16, 0x8BE9FD)
+
+        # -------------------------------------------------------------
+        # Phase 2: Gunshot / Blinding Flash & Shatter Trigger (Frames 26 ~ 30)
+        # -------------------------------------------------------------
+        elif f < 31
+            if f == 26 || f == 27
+                rect_fill(0, 0, 52, 16, 0xFFFFFF)
+            else
+                var y = 0
+                while y < 16
+                    var c_flash = 0x003399
+                    if (y + f) % 2 == 0 c_flash = 0x00E5FF end
+                    self.draw_line(0, y, 51, y, c_flash)
+                    y = y + 1
+                end
+                # Muzzle flash burst at temple (X=23, Y=3)
+                rect_fill(19, 0, 9, 7, 0xFFFFFF)
+                pixel(23, 3, 0xFFFFAA)
+            end
+
+        # -------------------------------------------------------------
+        # Phase 3: PERSONA Summon Text + Blue Flames + Radial Shards (Frames 31 ~ 72)
+        # -------------------------------------------------------------
+        elif f < 73
+            rect_fill(0, 0, 52, 8, 0x000E30)
+            rect_fill(0, 8, 52, 8, 0x00071C)
+
+            # Glowing "PERSONA" typography
+            var text_col = 0xFFFFFF
+            if f < 36
+                text_col = 0x00E5FF
+            end
+            self.draw_persona_word(9, 4, text_col)
+
+            # Blue Flames licking from row 15 up to row 11
+            var fx = 0
+            while fx < 52
+                var flame_h = 2 + ((f * 3 + fx * 7) % 3)
+                var dy = 0
+                while dy < flame_h
+                    var fy = 15 - dy
+                    var fc = 0x0033AA
+                    if dy == 1 fc = 0x0088FF
+                    elif dy >= 2 fc = 0x00E5FF end
+                    pixel(fx, fy, fc)
+                    dy = dy + 1
+                end
+                fx = fx + 1
+            end
+
+            # Radial Glass Shards explosion
+            var sf = f - 30
+            var si = 0
+            var shard_count = self.shards.size()
+            while si < shard_count
+                var s = self.shards[si]
+                var sx = int(s["x"] + (s["vx"] * sf * 4) / 10)
+                var sy = int(s["y"] + (s["vy"] * sf * 4) / 10 + (sf * sf) / 160)
+                if sx >= 0 && sx < 52 && sy >= 0 && sy < 16
+                    pixel(sx, sy, s["c"])
+                    if s["len"] > 1 && (sx + 1) < 52
+                        pixel(sx + 1, sy, 0x8BE9FD)
+                    end
+                    if s["len"] > 2 && (sy + 1) < 16
+                        pixel(sx, sy + 1, 0x00E5FF)
+                    end
+                end
+                si = si + 1
+            end
+
+        # -------------------------------------------------------------
+        # Phase 4: Dissipating Blue Embers into Clock (Frames 73 ~ 89)
+        # -------------------------------------------------------------
+        else
+            rect_fill(0, 0, 52, 16, 0x001450)
+            var ei = 0
+            while ei < 16
+                var ex = (ei * 13 + f * 2) % 52
+                var ey = (15 - (f - 72) * 2 + ei * 5) % 16
+                var ec = 0x8BE9FD
+                if (ei + f) % 2 == 0 ec = 0x00E5FF end
+                pixel(ex, ey, ec)
+                ei = ei + 1
+            end
+        end
+    end
 
     # 40 FPS Rendering Loop
     def draw()
         self.frame_count = self.frame_count + 1
+
+        # Check if summon animation is active
+        if self.is_summoning
+            self.draw_summon()
+            return
+        end
+
         var now = self.get_now()
         
         # Check if Dark Hour is active (either via force_dark or midnight 00:00~00:59)
@@ -474,8 +996,6 @@ class P3R_Clock
         var p3_col = 0xFFFFFF
 
         if is_dark_hour
-            # Dark Hour: Deep Tartarus green gradient matching the moon background (0x0A2B18)
-            # Row 0 and 1 use 0x0A2B18 so there is NO bright green line above the date
             c_surf = 0x0A2B18
             c_mid1 = 0x082414
             c_mid2 = 0x061D10
@@ -498,7 +1018,6 @@ class P3R_Clock
         while y < 16
             var c_line = c_abys
             if is_dark_hour
-                # In Dark Hour: smooth deep Tartarus gradient with NO green stripe at top
                 if y <= 1
                     c_line = c_surf
                 elif y <= 4
@@ -509,7 +1028,6 @@ class P3R_Clock
                     c_line = c_deep
                 end
             else
-                # In Normal Mode: ocean water with animated surface shimmer
                 if y <= 1
                     if (self.frame_count / 10 + y) % 3 == 0
                         c_line = 0x00E5FF
@@ -576,17 +1094,15 @@ class P3R_Clock
         var show_p3_now = is_cycle_enabled && ((self.frame_count / 160) % 2 == 1)
 
         if show_p3_now
-            # P3 Logo mode: classic Persona 3 Reload pixel typography
             self.draw_p3_logo(40, 1, p3_col)
         else
-            # Weekday mode: SUN, MON, TUE, WED, THU, FRI, SAT (High contrast yellow)
             var weekdays = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
             var w_name = weekdays[now["weekday"] % 7]
-            var w_color = 0xFFE600 # Persona Yellow
+            var w_color = 0xFFE600
             if is_dark_hour
-                w_color = 0xCEFF40 # Tartarus Lime Yellow
+                w_color = 0xCEFF40
             elif now["weekday"] == 0
-                w_color = 0xFF2A4D # Sunday Red
+                w_color = 0xFF2A4D
             end
             self.draw_text_3x5(39, 1, w_name, w_color)
         end

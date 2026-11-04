@@ -33,10 +33,13 @@
   - **左側 16×16 圖標**：影時間綠色滿月圖標。
   - **右側 36×16 區塊**：暗綠漸層背景。
   - **時鐘**：霓虹綠時分搭配紅色秒數。
+- **💥 召喚器爆頭召喚動畫（按鈕互動）**：
+  - 按下裝置按鈕（預設為中間 **Select / Middle** 鍵）即刻觸發經典 Persona 召喚過場動畫（包含舉槍瞄準、眼神特寫 Cut-in、開火強光、碎玻璃與青焰 PERSONA 特效）。
+  - **語音與召喚音效支援**：播放結城理召喚語音與槍響音效（支援硬體合成器回退機制）。
 - **P3 標誌輪播**：
   - 每隔 4 秒於星期位置輪流切換星期與 `P3` 標誌（日期保持常駐）。
 - **網頁端設定（`@config`）**：
-  - 可在 AWTRIX NG 網頁後台設定時區、強制開啟影時間與切換標誌輪播。
+  - 可在 AWTRIX NG 網頁後台設定時區、強制開啟影時間、切換標誌輪播、自訂召喚按鈕與音效開關。
 
 ---
 
@@ -44,6 +47,7 @@
 
 | 模式 | 預覽圖 |
 |---|---|
+| **💥 召喚器爆頭召喚動畫**<br>舉槍瞄準 + 眼神特寫 + 開火強光 + 碎玻璃與青焰 PERSONA | ![Summon Preview](assets/preview_summon.gif) |
 | **正常模式（星期）**<br>結城理圖標 + 日期 / 星期 + 時間 | ![Normal WED](assets/preview_normal_wed.png) |
 | **正常模式（P3 標誌）**<br>結城理圖標 + 日期 / P3 標誌 + 時間 | ![Normal P3](assets/preview_normal_p3.png) |
 | **影時間模式（星期）**<br>滿月圖標 + 日期 / 星期 + 綠色時鐘與紅色秒數 | ![Dark WED](assets/preview_dark_wed.png) |
@@ -75,6 +79,24 @@
 
 ---
 
+## 🔊 召喚語音與音效注意事項
+
+本專案支援在觸發召喚動畫時播放結城理的經典召喚語音（「Persona!」）與槍聲碎玻璃音效。針對不同的安裝途徑，音效處理方式如下：
+
+### 1. 從 AWTRIX Hub 安裝（推薦，自動附帶音效）
+- 從 **AWTRIX Hub** 搜尋並安裝時，AWTRIX NG 會自動將腳本與專屬的 8-bit `persona.mp3` 音效打包下載至裝置（存放於 `/SCRIPTS/Persona3/persona.mp3`）。
+- **安裝完成即開箱即用**，按下中間 Select 鍵便會直接播放音效，無須任何額外手動設定。
+
+### 2. 手動安裝（未上傳音檔將自動使用硬體合成器）
+- 由於單一 `.be` 腳本檔案無法夾帶二進位音訊，手動建立腳本時裝置內預設不會有 `persona.mp3`。
+- **自動回退機制（Fallback）**：若未手動上傳 MP3，腳本會**自動切換至 TC002 內建硬體合成器（Song Synthesizer）**，透過晶片直接合成 8-bit 風格的 Evoker 槍響爆音與「Per-so-na!」旋律，完全不需任何檔案依賴！
+- **手動上傳 8-bit 語音音檔**：
+  1. 開啟 AWTRIX NG 網頁後台（`http://<裝置IP>`）。
+  2. 前往 **Audio**（音效）標籤頁，或在 **Scripts** 頁面點擊編輯列上的 **🎵 音符圖示**。
+  3. 將專案中的 [`assets/persona.mp3`](assets/persona.mp3) 上傳至時鐘即可啟用完整語音。
+
+---
+
 ## ⚙️ 設定項目
 
 在 AWTRIX NG 後台的 **Apps** 頁面中，點擊 **Persona 3 Reload Clock** 旁的齒輪圖示（**⚙️**）：
@@ -84,6 +106,8 @@
 | `Timezone` (`timezone`) | `text` | `"Asia/Taipei"` | IANA 時區（如 `Asia/Taipei`, `Asia/Tokyo`, `UTC`）或數字時差（`+8`, `-5`）。設為 `"auto"` 則使用裝置系統時間。 |
 | `Force Dark Hour` (`force_dark`) | `bool` | `false` | 強制開啟影時間主題（滿月與暗綠色調）。 |
 | `Cycle P3 Logo` (`enable_p3_cycle`) | `bool` | `true` | 每 4 秒於星期位置輪播切換星期與 P3 標誌。 |
+| `Summon Button` (`trigger_btn`) | `text` | `"select"` | 觸發召喚動畫的實體按鍵：`select`（中間鍵）、`middle`、`left`、`right` 或 `any`。 |
+| `Enable Sound` (`enable_sound`) | `bool` | `true` | 是否於召喚時播放語音及音效。 |
 
 ---
 
@@ -92,18 +116,20 @@
 ```text
 awtrix-p3r-clock/
 ├── app/
-│   └── p3r.be                 # AWTRIX NG Berry 應用程式
+│   └── p3r.be                   # AWTRIX NG Berry 應用程式
 ├── assets/
-│   ├── preview.svg            # 預覽橫幅
-│   ├── preview_normal_wed.png # 正常模式（星期）
-│   ├── preview_normal_p3.png  # 正常模式（P3 標誌）
-│   ├── preview_dark_wed.png   # 影時間模式（星期）
-│   └── preview_dark_p3.png    # 影時間模式（P3 標誌）
-├── LICENSE                    # MIT 授權條款
-├── README.md                  # 英文說明文件
-├── README.zh-TW.md            # 繁體中文說明文件
-├── README.ja.md               # 日文說明文件
-└── README.ko.md               # 韓文說明文件
+│   ├── persona.mp3              # 結城理「Persona!」召喚語音（上傳至 AWTRIX Audio）
+│   ├── preview.svg              # 預覽橫幅
+│   ├── preview_summon.gif       # 召喚器爆頭召喚動態效果預覽
+│   ├── preview_normal_wed.png   # 正常模式（星期）
+│   ├── preview_normal_p3.png    # 正常模式（P3 標誌）
+│   ├── preview_dark_wed.png     # 影時間模式（星期）
+│   └── preview_dark_p3.png      # 影時間模式（P3 標誌）
+├── LICENSE                      # MIT 授權條款
+├── README.md                    # 英文說明文件
+├── README.zh-TW.md              # 繁體中文說明文件
+├── README.ja.md                 # 日文說明文件
+└── README.ko.md                 # 韓文說明文件
 ```
 
 ---

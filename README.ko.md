@@ -33,10 +33,13 @@
   - **좌측 16×16 아이콘**: 섀도 타임 보름달(Full Moon) 픽셀 아트 아이콘.
   - **우측 36×16 패널**: 다크 그린 그라데이션 배경.
   - **디지털 시계**: 네온 그린 시/분과 붉은색 초 단위 표시.
+- **💥 소환기(Evoker) 페르소나 소환 연출 (버튼 상호작용)**:
+  - 기기 버튼(기본값: 가운데 **Select** 버튼)을 누르면 상징적인 페르소나 소환 컷씬 애니메이션이 발동됩니다 (소환기 조준, 눈빛 컷인, 격발 섬광, 유리 파편 및 푸른 불꽃 이펙트).
+  - **음성 및 소환 효과음 지원**: 유키 마코토의 소환 대사와 총소리 효과음을 재생합니다 (내장 하드웨어 신디사이저 자동 대체 기능 포함).
 - **P3 로고 순환 (Cycle P3 Logo)**:
   - 날짜 표시를 유지하면서 요일 슬롯이 4초마다 요일과 `P3` 로고로 교차 전환됩니다.
 - **웹 UI 설정 지원 (`@config`)**:
-  - AWTRIX NG 웹 관리 페이지에서 타임존 설정, 섀도 타임 강제 활성화, P3 로고 순환 여부를 손쉽게 제어할 수 있습니다.
+  - AWTRIX NG 웹 관리 페이지에서 타임존 설정, 섀도 타임 강제 활성화, P3 로고 순환 여부, 소환 버튼 매핑, 음성 켜기/끄기를 손쉽게 제어할 수 있습니다.
 
 ---
 
@@ -44,6 +47,7 @@
 
 | 모드 | 미리보기 |
 |---|---|
+| **💥 소환기 페르소나 소환 애니메이션**<br>자세 + 눈빛 컷인 + 격발 섬광 + 유리 파편 & 푸른 불꽃 PERSONA | ![Summon Preview](assets/preview_summon.gif) |
 | **일반 모드 (요일 표시)**<br>유키 마코토 아이콘 + 날짜 / 요일 + 시계 | ![Normal WED](assets/preview_normal_wed.png) |
 | **일반 모드 (P3 로고 표시)**<br>유키 마코토 아이콘 + 날짜 / P3 로고 + 시계 | ![Normal P3](assets/preview_normal_p3.png) |
 | **섀도 타임 모드 (요일 표시)**<br>보름달 아이콘 + 날짜 / 요일 + 네온 시계 | ![Dark WED](assets/preview_dark_wed.png) |
@@ -75,15 +79,35 @@
 
 ---
 
+## 🔊 소환 음성 및 효과음 주의사항
+
+본 앱은 페르소나 소환 애니메이션 실행 시 유키 마코토의 소환 음성("Persona!") 및 총소리 효과음 재생을 지원합니다. 설치 경로에 따른 사운드 처리 방식은 다음과 같습니다:
+
+### 1. AWTRIX Hub에서 설치 (권장, 사운드 자동 포함)
+- **AWTRIX Hub**에서 검색하여 설치할 경우, AWTRIX NG가 스크립트와 함께 전용 8-bit `persona.mp3` 오디오 파일을 번들로 자동 다운로드합니다(`/SCRIPTS/Persona3/persona.mp3`에 저장).
+- **설치 즉시 사용 가능**: 가운데 Select 버튼을 누르면 별도의 추가 설정 없이 바로 음성과 효과음이 재생됩니다.
+
+### 2. 수동 설치 (음원 미업로드 시 하드웨어 신시사이저로 자동 대체)
+- 단일 `.be` 스크립트 파일은 바이너리 사운드 데이터를 담을 수 없으므로, 코드를 직접 붙여넣어 설치할 경우 기기 내에 `persona.mp3`가 존재하지 않습니다.
+- **자동 폴백(Fallback) 메커니즘**: MP3 파일이 없을 경우, 스크립트가 **TC002 내장 하드웨어 신시사이저(Song Synthesizer)로 자동 전환**됩니다. 외부 파일 없이 칩 자체에서 8-bit 스타일의 에볼커 총소리 노이즈와 "Per-so-na!" 멜로디를 합성 출력합니다.
+- **수동으로 8-bit 음성 등록하기**:
+  1. AWTRIX NG 웹 관리자(`http://<기기IP>`)를 엽니다.
+  2. **Audio** 탭으로 이동하거나, **Scripts** 탭 편집기 상단의 **🎵 음표 아이콘**을 클릭합니다.
+  3. 저장소의 [`assets/persona.mp3`](assets/persona.mp3) 파일을 업로드하면 정식 8-bit 보이스가 활성화됩니다.
+
+---
+
 ## ⚙️ 설정 항목
 
-AWTRIX NG 관리자 페이지의 **Apps** 메뉴에서 **Persona 3 Reload Clock** 옆의 톱니바퀴 아이콘(**⚙️**)을 클릭하여 설정합니다:
+AWTRIX NG 웹 관리자의 **Apps** 페이지에서 **Persona 3 Reload Clock** 옆의 톱니바퀴 아이콘(**⚙️**)을 클릭하여 설정합니다:
 
-| 설정 항목 | 데이터 타입 | 기본값 | 설명 |
+| 설정 항목 | 타입 | 기본값 | 설명 |
 |---|---|---|---|
-| `Timezone` (`timezone`) | `text` | `"Asia/Taipei"` | IANA 타임존 (예: `Asia/Seoul`, `Asia/Tokyo`, `UTC`) 또는 숫자 오프셋 (`+9`, `+8` 등). `"auto"`로 설정하면 기기 기본 시스템 시간을 사용합니다. |
-| `Force Dark Hour` (`force_dark`) | `bool` | `false` | 섀도 타임 테마(보름달 아이콘 및 다크 그린 색상 구성)를 항상 강제로 켭니다. |
-| `Cycle P3 Logo` (`enable_p3_cycle`) | `bool` | `true` | 4초마다 요일 표시 위치를 요일과 P3 로고로 번갈아 전환합니다. |
+| `Timezone` (`timezone`) | `text` | `"Asia/Taipei"` | IANA 표준 시간대(예: `Asia/Seoul`, `Asia/Tokyo`, `UTC`) 또는 숫자 오프셋(`+9`, `-5`). `"auto"` 설정 시 기기 시스템 시간 사용. |
+| `Force Dark Hour` (`force_dark`) | `bool` | `false` | 섀도 타임 테마(보름달 및 다크 그린 팔레트)를 강제로 활성화합니다. |
+| `Cycle P3 Logo` (`enable_p3_cycle`) | `bool` | `true` | 요일 슬롯을 4초마다 요일과 P3 로고로 번갈아 순환 표시합니다. |
+| `Summon Button` (`trigger_btn`) | `text` | `"select"` | 소환 애니메이션을 실행할 기기 물리 버튼: `select`(가운데 버튼), `middle`, `left`, `right`, 또는 `any`. |
+| `Enable Sound` (`enable_sound`) | `bool` | `true` | 소환 시 음성 및 효과음 재생 활성화 여부. |
 
 ---
 
@@ -92,24 +116,22 @@ AWTRIX NG 관리자 페이지의 **Apps** 메뉴에서 **Persona 3 Reload Clock*
 ```text
 awtrix-p3r-clock/
 ├── app/
-│   └── p3r.be                 # AWTRIX NG용 Berry 애플리케이션
+│   └── p3r.be                   # AWTRIX NG용 Berry 애플리케이션
 ├── assets/
-│   ├── preview.svg            # LED 미리보기 배너
-│   ├── preview_normal_wed.png # 일반 모드 (요일 표시)
-│   ├── preview_normal_p3.png  # 일반 모드 (P3 로고 표시)
-│   ├── preview_dark_wed.png   # 섀도 타임 모드 (요일 표시)
-│   └── preview_dark_p3.png    # 섀도 타임 모드 (P3 로고 표시)
-├── LICENSE                    # MIT 라이선스
-├── README.md                  # 영문 문서
-├── README.zh-TW.md            # 번체 중국어 문서
-├── README.ja.md               # 일본어 문서
-└── README.ko.md               # 한국어 문서
+│   ├── persona.mp3              # "Persona!" 소환 음성 (AWTRIX Audio에 업로드)
+│   ├── preview.svg              # LED 미리보기 배너
+│   ├── preview_summon.gif       # 소환기 페르소나 소환 애니메이션 미리보기
+│   ├── preview_normal_wed.png   # 일반 모드 (요일)
+│   ├── preview_normal_p3.png    # 일반 모드 (P3 로고)
+│   ├── preview_dark_wed.png     # 섀도 타임 모드 (요일)
+│   └── preview_dark_p3.png      # 섀도 타임 모드 (P3 로고)
+├── LICENSE                      # MIT 라이선스
+├── README.md                    # 영문 문서
+├── README.zh-TW.md              # 번체 중국어 문서
+├── README.ja.md                 # 일본어 문서
+└── README.ko.md                 # 한국어 문서
 ```
 
 ---
 
-## 📄 라이선스 및 면책 조항
-
-- 본 프로젝트의 코드는 [MIT License](LICENSE)에 따라 배포됩니다.
-- 《페르소나 3 리로드》(*Persona 3 Reload*) 및 관련 캐릭터와 디자인 에셋에 대한 모든 저작권은 **ATLUS / SEGA**에 있습니다. 본 프로젝트는 비상업적 팬 창작물입니다.
 
